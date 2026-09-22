@@ -1,0 +1,47 @@
+{
+  "name": "access-conformance",
+  "version": "0.1.0",
+  "description": "One runnable instrument that drives the whole assistive-input stack in a single session and emits a measurement report \u2014 timing, input, and consent, with the conformance checks that make the number trustworthy.",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "access-conformance": "src/cli.js"
+  },
+  "exports": {
+    ".": "./src/index.js",
+    "./runner.js": "./src/runner.js",
+    "./checks.js": "./src/checks.js"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test tests/conformance.test.mjs",
+    "run": "node src/cli.js"
+  },
+  "dependencies": {
+    "@designesy/read-along": "^0.2.2",
+    "access-input": "^0.4.0",
+    "neural-consent": "^0.3.0"
+  },
+  "keywords": [
+    "assistive-technology",
+    "a11y",
+    "conformance",
+    "measurement",
+    "bci",
+    "emg",
+    "switch-access"
+  ],
+  "license": "MIT",
+  "author": "Le Vain Bey",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LE-VAI/access-conformance.git"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
