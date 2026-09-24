@@ -60,8 +60,11 @@ export class SessionClock {
  * @param {number} [options.wordCount=40]
  * @param {number} [options.wordsPerMinute=180]
  * @param {boolean} [options.grantConsent=true]
- * @param {number} [options.armedMs=3600000]  session exposure, for the rate
- * @param {number} [options.activeMs=900000]  time actually working at selection
+ * @param {number} [options.armedMs]  declared armed exposure. Omit to use the
+ *   session's OBSERVED length — see the exposure-resolution note before the report
+ * @param {number} [options.activeMs]  declared time actually working at selection.
+ *   Omit to derive from the observed session. Declaring activeMs alone does NOT
+ *   invent an armed window; the CLI pairs them when only --active-ms is passed
  * @param {Array<object>} [options.events] scripted activations, if a caller
  *   wants to inject specific outcomes rather than the default scenario
  * @returns {object} the report
@@ -128,14 +131,37 @@ export function runSession(options = {}) {
   const sampleRate = 24000;
 
   // One timing set per chunk, from that chunk's own span duration.
+  //
+  // THE OFFSET IS NOT OPTIONAL. `wordTimingsFromChunk` derives spans from the
+  // chunk's own audio duration, so every chunk's timings begin at 0. The engines
+  // expect ONE session-absolute manifest, so concatenating the per-chunk results
+  // without a cumulative offset produces a sequence whose start times reset —
+  // chunk 0 spans 0..4329ms and chunk 1 also starts at 0. The consequence is not
+  // an error but a silent one: `ExternalEngine` emits tokens in manifest order
+  // and interleaves the two chunks (13,14,2,15,3,...), so the read position jumps
+  // backwards 11 times in a 40-word read and the first two tokens never fire at
+  // all. The highlight layer would visibly jerk back and forth.
+  //
+  // Found by making `timing.monotonic` compare the actual emission sequence
+  // instead of asserting `tokensEmitted > 0` — the check could not see this,
+  // and the report could not either, because the sequence was never emitted.
   const timings = [];
+  let chunkOffsetMs = 0;
   for (const chunk of chunks) {
     const chunkMs = Math.max(chunk.tokens.length, 1) * msPerWord;
     const audio = {
       sampleRate,
       samples: { length: Math.round((chunkMs / 1000) * sampleRate) },
     };
-    timings.push(...wordTimingsFromChunk(chunk, audio));
+    const chunkTimings = wordTimingsFromChunk(chunk, audio);
+    for (const t of chunkTimings) {
+      timings.push({
+        ...t,
+        startMs: t.startMs + chunkOffsetMs,
+        endMs: t.endMs + chunkOffsetMs,
+      });
+    }
+    chunkOffsetMs += chunkMs;
   }
   // Convert to the tuple manifest the engines require. This is the seam that
   // was broken until 0.2.3 — the producer returned objects, the consumer wants
@@ -171,13 +197,25 @@ export function runSession(options = {}) {
     sessionId,
     intentionalHoldMs: options.intentionalHoldMs ?? 400,
   });
-  // The session's exposure, stated rather than inferred from how long the
-  // scripted scenario happened to take. A virtual clock can represent any
-  // duration at no cost, so the default is a real session length (30 min armed,
-  // 15 min working) — a demo that always withholds its own headline number
-  // teaches nothing. Callers override via armedMs/activeMs.
-  const armedMs = options.armedMs ?? 1800000;
-  const activeMs = options.activeMs ?? 900000;
+  // The session's exposure.
+  //
+  // DEFAULTS NOW COME FROM THE OBSERVED SESSION, NOT FROM A DECLARATION. This
+  // block previously defaulted to a literal 30min armed / 15min active, which
+  // meant a 27-second scripted scenario reported `0.507h armed` — a 68x
+  // extrapolation, and the 15-minute floor could never fire because it was
+  // tested against the declared figure rather than the observed run. The
+  // withheld-rate path was therefore unreachable in practice while the README
+  // presented it as a defining property.
+  //
+  // Ordering constraint: the counters arm at t=0 (`counter.armed(clock.to(0))`
+  // below), so the exposure cannot be finalised until the scenario has run. The
+  // observed end time is captured here and the real denominators are applied just
+  // before the report is built. An explicit armedMs/activeMs still overrides —
+  // a caller measuring a real session knows its exposure better than the clock.
+  const declaredArmedMs = options.armedMs;
+  const declaredActiveMs = options.activeMs;
+  const armedMs = declaredArmedMs ?? null;
+  const activeMs = declaredActiveMs ?? null;
   counter.armed(clock.to(0));
 
   // ---------------------------------------------------------------------
@@ -293,7 +331,27 @@ export function runSession(options = {}) {
   }
 
   source.focus(null, clock.now());
-  counter.disarm(clock.now() + armedMs, { activeMs });
+  // Exposure resolution.
+  //
+  // `disarm(tMs, {activeMs})` does NOT set a duration — it accrues
+  // `tMs - _armedSince` onto this.armedMs and adds `activeMs` onto this.activeMs.
+  // So passing `clock.now() + window` double-counted: the observed span was added
+  // first, then the window on top, yielding 2x the session for an observed run.
+  // Both values must therefore be passed as DURATIONS.
+  //
+  // When the caller declared the exposure, honour the declaration — they are
+  // measuring a real session and know its window better than the clock does.
+  // Otherwise the session's OBSERVED length is the exposure, so the headline rate
+  // is a real rate over a real window and the 15-minute floor can actually fire
+  // on a short run (which is what makes the withheld-rate path reachable).
+  const observedMs = clock.now();
+  // armedMs accrues from the arm point (t=0) to now, so disarming at `now` gives
+  // the observed span for free. A declared armed window replaces it by disarming
+  // at the declared instant instead.
+  const disarmAtMs = armedMs === null ? observedMs : armedMs;
+  const finalActiveMs = activeMs === null ? Math.round(observedMs / 2) : activeMs;
+  const exposureSource = armedMs === null ? 'observed' : 'declared';
+  counter.disarm(disarmAtMs, { activeMs: finalActiveMs });
 
   // ---------------------------------------------------------------------
   // The report — everything, from one run.
@@ -311,6 +369,10 @@ export function runSession(options = {}) {
       wordsPerMinute: wpm,
       tokensEmitted: tokensSeen.length,
       lastToken: tokensSeen.length ? tokensSeen[tokensSeen.length - 1] : null,
+      // The emission ORDER, not just the count. Without it a monotonicity check
+      // has nothing to compare and can only assert "something was emitted" —
+      // which is what timing.monotonic did before this field existed.
+      tokenSequence: tokensSeen.slice(),
       msPerWord,
     },
     input: {
@@ -329,6 +391,12 @@ export function runSession(options = {}) {
     measurement: {
       armed: measure,
       active: measureActive,
+      // Whether the exposure behind the rate was OBSERVED from the run or
+      // DECLARED by the caller. A rate over a declared window is not the same
+      // artifact as a rate over a measured one, and a reader cannot tell them
+      // apart from the numbers alone.
+      exposureSource,
+      observedMs,
     },
     steps,
     checks: [],

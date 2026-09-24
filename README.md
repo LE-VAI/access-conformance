@@ -24,14 +24,34 @@ lab can run it, a clinician can be trained on it, a reader can audit the report.
 
 ## What it measures
 
-The number, first, because that is what the run is for:
+The number, first, because that is what the run is for (this is real output):
 
 ```
-false activations   2 / armed hour
-  denominator       0.5h armed · 0.25h active (4/h)
-  outcomes          6 total — 3 true · 2 ambiguous · 1 false
+$ npx access-conformance                      # observed exposure
+false activations   WITHHELD — exposure too short for a per-hour rate
+  exposure          0.007h (floor is 0.25h).
+
+$ npx access-conformance --active-ms 900000   # declared exposure
+false activations   0 / armed hour
+  denominator       0.5h armed · 0.25h active (0/h)
+  exposure source   DECLARED by the caller, not measured from the run.
+                    Actual session length: 26.9s.
+                    The rate above is extrapolated 67.0x from that run,
+                    so it describes the declared window, not this session.
+  outcomes          4 total — 2 true · 2 ambiguous · 0 false
   NOTE              2 ambiguous activation(s) are reported ON THEIR OWN LINE.
 ```
+
+**Exposure is reported with its provenance.** Every report states whether the
+denominator was `observed` from the run or `declared` by the caller, and the CLI
+prints the extrapolation factor when a declared window is much longer than the
+session that produced it. A rate over an assumed window is not the same artifact
+as a rate over a measured one, and the numbers alone cannot tell them apart.
+
+Note what the output does and does not say. A dwell session **cannot** produce a
+`false` outcome — a completed dwell cannot fire in under `lockOnMs + dwellMs`, so
+every undone dwell classifies as *ambiguous* (see below). So `0 false` is a
+property of the access method, not evidence of a flawless device.
 
 **An absent or too-short exposure reports `null`, never `0`.** A rate of 0 reads
 as "no misfires"; the truth is "no measurement". A device nobody measured must
@@ -119,18 +139,47 @@ runSession({
 ```
 
 CLI flags: `--json`, `--quiet`, `--verbose`, `--session=NAME`, `--dwell-ms=N`,
-`--words=N`, `--wpm=N`, `--active-ms=N`, `--intentional-hold-ms=N`.
+`--words=N`, `--wpm=N`, `--armed-ms=N`, `--active-ms=N`, `--intentional-hold-ms=N`.
+
+Omit `--armed-ms`/`--active-ms` to measure the observed session (recommended for
+real use). Passing `--active-ms` declares the exposure pair — the armed window
+defaults to twice the active one, the historical ratio — and the report will say
+so, along with how far the printed rate extrapolates from the actual run.
 
 ## What this is not
 
 Not a validated instrument. The metric it computes is **specified, not
-established** — no per-hour false-activation benchmark exists anywhere in the
-assistive-technology literature, for any access method, which is the gap this
-addresses. The parameters are engineering values, stated and echoed in every
-report, and the field's own adoption history (64% of AT outcome instruments are
-cited exactly once) says a number does not become a standard by being published.
+established**. The parameters are engineering values, stated and echoed in every
+report.
 
-The method is in `access-input`'s `docs/MEASUREMENT-PROTOCOL.md`.
+**The gap is narrower than "no benchmark exists", and the earlier version of this
+section said so wrongly.** Per-hour and per-minute false-activation figures *are*
+published for adjacent access methods — a hybrid SSVEP+EOG study reports a switch
+false-activation rate of 0.01/min, and a 500-participant wearable-gesture study
+reports 0.6 false positives per hour, which is this metric's exact unit. What does
+not exist is a **validated device-performance instrument for assistive input**:
+QUEST is COSMIN-assessed but measures user *satisfaction*, not device behaviour.
+That distinction is the honest version of this project's claim, and any published
+number from this tool should be read *against* those figures rather than as the
+first of its kind.
+
+The 15-minute exposure floor before a rate is reported is modelled on recognized
+statistical-unreliability suppression (NCHS suppresses rates under 20 events; SEER
+under 10). Note that those conventions threshold on **event count**, not elapsed
+time — an event-count floor would be both more defensible and more citable than the
+duration floor used here.
+
+Not a conformance authority. Automated checks cannot establish conformance: W3C WAI
+states that "no tool alone can determine if a site meets accessibility standards,"
+and established tools in the CI-gating role (axe-core, Pa11y, Lighthouse CI) define
+pass/fail without claiming it. This package inherits the name; it does not inherit
+the authority. A CI log from this tool says *these 11 properties held in this
+session* — not that anything conforms. The regulatory shape to avoid is documented:
+the FTC's January 2025 action required a vendor to pay $1M for advertising
+automated checks as compliance.
+
+The method is in `docs/MEASUREMENT-PROTOCOL.md` (see the repository; the file was
+cited here before it existed, and writing it is the next task).
 
 ## License
 

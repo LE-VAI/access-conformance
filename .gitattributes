@@ -1,0 +1,11 @@
+# Normalize line endings so Windows contributors do not produce phantom diffs.
+# Before this file existed, editing src/cli.js on Windows showed it as modified
+# when the only change was CRLF vs LF — git reported a modification with an
+# empty word-diff ignoring line endings.
+* text=auto eol=lf
+
+# Binary assets must never be normalized.
+*.png binary
+*.jpg binary
+*.mp4 binary
+*.woff2 binary

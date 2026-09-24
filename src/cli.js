@@ -25,12 +25,24 @@ function num(v, fallback) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+// Exposure is ONE declaration or none. `--active-ms` alone would otherwise set
+// the active window while the armed window stayed observed, so the two
+// denominators would describe different sessions and the armed rate would be a
+// 1-second figure printed beside a 15-minute one. Passing `--active-ms` now
+// declares the pair, using `--armed-ms` when given and the historical 2:1
+// armed:active ratio otherwise. Omit both to measure the observed session.
+const declaredActiveMs = args.includes('--active-ms') ? num('active-ms', 900000) : null;
+const declaredArmedMs = args.includes('--armed-ms')
+  ? num('armed-ms', 1800000)
+  : (declaredActiveMs === null ? null : declaredActiveMs * 2);
+
 const report = runSession({
   sessionId: args.find((a) => a.startsWith('--session='))?.split('=')[1] ?? 'cli',
   dwellMs: num('dwell-ms', 600),
   wordCount: num('words', 40),
   wordsPerMinute: num('wpm', 180),
-  activeMs: num('active-ms', 900000),
+  armedMs: declaredArmedMs ?? undefined,
+  activeMs: declaredActiveMs ?? undefined,
   intentionalHoldMs: num('intentional-hold-ms', 400),
 });
 
@@ -74,6 +86,22 @@ if (m.rateWithheld) {
               (measurement.active.denominatorHours
                 ? ` · ${measurement.active.denominatorHours}h active (${measurement.active.falsePerHour}/h)`
                 : ''));
+  // A rate over a window the caller ASSUMED is not the same artifact as a rate
+  // over a window the run OBSERVED. Say which, so the number cannot be quoted
+  // without its provenance.
+  if (measurement.exposureSource === 'declared') {
+    const observed = measurement.observedMs ?? 0;
+    const factor = observed > 0 ? (m.denominatorMs / observed) : Infinity;
+    console.log(`  exposure source   DECLARED by the caller, not measured from the run.`);
+    console.log(`                    Actual session length: ${(observed / 1000).toFixed(1)}s.`);
+    if (Number.isFinite(factor) && factor >= 2) {
+      console.log(`                    The rate above is extrapolated ${factor.toFixed(1)}x from that run,`);
+      console.log('                    so it describes the declared window, not this session.');
+    }
+    console.log('                    Omit --active-ms to measure the observed session instead.');
+  } else {
+    console.log('  exposure source   observed from this session');
+  }
 }
 
 const c = m.counts;

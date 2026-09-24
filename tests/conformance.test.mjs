@@ -214,3 +214,91 @@ test('a caller can script its own events instead of the default scenario', () =>
   assert.equal(r.input.targets[0], 'a');
   assert.equal(r.measurement.armed.counts.total, 1);
 });
+
+// -- regressions found by the 2026-09-24 audit -------------------------------
+// Each of these asserts a property that was BROKEN in the shipped code. They are
+// written against reproduced defects, not hypotheticals.
+
+test('CRITICAL: the read position is monotonic across chunk boundaries', () => {
+  // The session text is split into chunks by read-along's tokenizer, and each
+  // chunk's timings were derived from that chunk's own audio duration — so every
+  // chunk's spans began at 0. Concatenating them produced a manifest whose start
+  // times reset, and the engine emitted tokens in manifest order: 13, 14, 2, 15,
+  // 3, ... The read jumped backwards 11 times in a 40-word session and the first
+  // two tokens never fired at all.
+  //
+  // This test would have failed before the cumulative chunk offset was applied.
+  const r = runSession({ wordCount: 40 });
+  const seq = r.timing.tokenSequence;
+  assert.ok(Array.isArray(seq), 'the report must carry the emission sequence');
+  assert.ok(seq.length > 0);
+  for (let i = 1; i < seq.length; i++) {
+    assert.ok(seq[i] > seq[i - 1],
+      `read position went backwards at ${i}: ${seq[i - 1]} -> ${seq[i]}`);
+  }
+  assert.equal(r.timing.tokensEmitted, r.timing.words,
+    'every token must be emitted — the interleave dropped the first two');
+});
+
+test('timing.monotonic can FAIL on a non-monotonic sequence', () => {
+  // It previously asserted only `tokensEmitted > 0` — a duplicate of
+  // timing.one-clock that could never examine monotonicity.
+  const r = runSession();
+  const sabotaged = structuredClone(r);
+  sabotaged.timing.tokenSequence = [0, 1, 2, 5, 3, 6];
+  const checks = runChecks(sabotaged);
+  assert.equal(checks.find((c) => c.id === 'timing.monotonic').status, 'fail');
+});
+
+test('CRITICAL: measure.ambiguous-separate can FAIL when the fold happens', () => {
+  // The check's status was `c.ambiguous > 0 ? 'pass' : 'n/a'`, so the precise
+  // defect it documents — ambiguous folded into false, leaving ambiguous at 0 —
+  // read as n/a and the run still reported ok. Evidence now comes from the input
+  // to classification (activations carrying an 'undone' witness).
+  const r = runSession();
+  const folded = structuredClone(r);
+  const a = folded.measurement.armed;
+  for (const act of a.activations) {
+    if (act.witness === 'undone') act.outcome = 'false';
+  }
+  a.counts.false += a.counts.ambiguous;
+  a.counts.ambiguous = 0;
+  const checks = runChecks(folded);
+  const check = checks.find((c) => c.id === 'measure.ambiguous-separate');
+  assert.equal(check.status, 'fail', 'a folded classifier must fail this check');
+  assert.ok(!checks.every((c) => c.status !== 'fail'), 'and the run must not be ok');
+});
+
+test('the report states whether exposure was observed or declared', () => {
+  const observed = runSession();
+  assert.equal(observed.measurement.exposureSource, 'observed',
+    'with no declared window, exposure comes from the run');
+  assert.equal(observed.measurement.armed.denominatorMs, observed.measurement.observedMs,
+    'and the denominator IS the observed session length');
+
+  const declared = runSession({ armedMs: 1800000, activeMs: 900000 });
+  assert.equal(declared.measurement.exposureSource, 'declared');
+  assert.equal(declared.measurement.armed.denominatorMs, 1800000,
+    'a declared armed window replaces the observed span');
+
+  // activeMs ALONE leaves the armed window observed — the runner does not invent
+  // an armed duration from an active one. Pairing them is the CLI's job (it does
+  // so at the historical 2:1 ratio when only --active-ms is passed), because only
+  // the CLI knows the user declared a window rather than a whole session.
+  const activeOnly = runSession({ activeMs: 900000 });
+  assert.equal(activeOnly.measurement.exposureSource, 'observed');
+  assert.equal(activeOnly.measurement.active.denominatorMs, 900000,
+    'but the active window IS the declared one');
+});
+
+test('CRITICAL: a short session actually WITHHOLDS its rate', () => {
+  // The withheld path was unreachable in shipped code: the floor was tested
+  // against a hardcoded 30-minute declaration, so a 27-second run reported
+  // 0.507h armed and printed a rate. It is now reachable via the observed
+  // default, and this asserts the CLI's branch can be entered by a real run.
+  const r = runSession({ activeMs: 60000 });
+  assert.equal(r.measurement.armed.rateWithheld, true,
+    'a one-minute declared exposure must withhold the rate');
+  assert.equal(r.measurement.armed.falsePerHour, null,
+    'and the rate must be null, never 0');
+});

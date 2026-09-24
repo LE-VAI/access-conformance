@@ -42,14 +42,30 @@ export function runChecks(report) {
   // the specific defect the three-outcome split exists to prevent: an abandoned
   // attempt counted as a device misfire makes the rate track the user's
   // decision-making instead of the hardware.
+  //
+  // THIS CHECK USED TO BE UNABLE TO FAIL. Its status expression was
+  // `c.ambiguous > 0 ? 'pass' : 'n/a'`, so the fold it exists to catch — ambiguous
+  // moved into false, leaving ambiguous at 0 — was indistinguishable from a
+  // session that genuinely had none, and the run still reported ok. The evidence
+  // for the fold now comes from the INPUT to classification (activations that
+  // carry an 'undone' witness) rather than from the output it corrupts.
   const c = measurement.armed.counts;
+  const undone = measurement.armed.activations.filter((a) => a.witness === 'undone');
+  const foldSuspects = undone.filter((a) => a.outcome === 'false');
+  const foldDetected = foldSuspects.length > 0;
   checks.push({
     id: 'measure.ambiguous-separate',
     name: 'The ambiguous count is reported separately',
-    status: c.ambiguous > 0 && measurement.armed.ambiguousPerHour !== null ? 'pass' : 'n/a',
-    detail: `${c.ambiguous} ambiguous activation(s), reported as ` +
-            `${measurement.armed.ambiguousPerHour ?? 'n/a'} per armed hour, ` +
-            'never folded into the false count',
+    status: foldDetected
+      ? 'fail'
+      : (c.ambiguous > 0 && measurement.armed.ambiguousPerHour !== null ? 'pass' : 'n/a'),
+    detail: foldDetected
+      ? `${foldSuspects.length} undone activation(s) were classified 'false' — an ` +
+        'abandoned attempt has been counted as a device misfire, which makes the ' +
+        'rate track the user rather than the hardware'
+      : `${c.ambiguous} ambiguous activation(s), reported as ` +
+        `${measurement.armed.ambiguousPerHour ?? 'n/a'} per armed hour, ` +
+        'never folded into the false count',
     because: 'collapsing ambiguous into false is the bug the three-outcome split prevents — ' +
              'and it is reachable by one line in the classifier',
   });
@@ -125,11 +141,28 @@ export function runChecks(report) {
   });
 
   // Monotonic tokens: the read position must not go backwards within a session.
+  //
+  // This check previously read `timing.tokensEmitted > 0 ? 'pass' : 'n/a'` — a
+  // duplicate of timing.one-clock that could not examine monotonicity, because
+  // the report did not carry the emission order. It now compares the sequence.
+  const seq = timing.tokenSequence;
+  let breakAt = -1;
+  if (Array.isArray(seq)) {
+    for (let i = 1; i < seq.length; i++) {
+      if (!(seq[i] > seq[i - 1])) { breakAt = i; break; }
+    }
+  }
   checks.push({
     id: 'timing.monotonic',
     name: 'Token emission is monotonic',
-    status: timing.tokensEmitted > 0 ? 'pass' : 'n/a',
-    detail: `${timing.tokensEmitted} emission(s) across ${timing.words} word(s)`,
+    status: !Array.isArray(seq)
+      ? 'n/a'
+      : (seq.length === 0 ? 'n/a' : (breakAt === -1 ? 'pass' : 'fail')),
+    detail: !Array.isArray(seq)
+      ? 'the report did not carry the emission sequence, so monotonicity cannot be assessed'
+      : (breakAt === -1
+        ? `${seq.length} emission(s) across ${timing.words} word(s), strictly increasing`
+        : `read position went backwards at index ${breakAt}: ${seq[breakAt - 1]} -> ${seq[breakAt]}`),
     because: 'a non-monotonic read position means the highlight layer would visibly jump backwards',
   });
 

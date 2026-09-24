@@ -1,0 +1,50 @@
+name: conformance
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['18', '20', '22']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      # `npm ci` (not `install`) deliberately: it fails when the lockfile and
+      # package.json disagree. This repo shipped that exact drift once — the
+      # lock pinned @designesy/read-along@0.2.1 while package.json required
+      # ^0.2.2, and 0.2.1 has no ./tokenizer.js subpath, which runner.js
+      # imports. `npm ci` is the check that catches it.
+      - run: npm ci
+
+      - run: npm test
+
+      # The product claim is that this tool gates CI. Gate the repo with it,
+      # on every Node in the matrix, or the claim is untested.
+      - name: self-conformance (exit 0 expected)
+        run: npx --no-install access-conformance --quiet --json > report.json
+
+      - name: the report is well-formed
+        run: |
+          node -e "
+            const r = require('./report.json');
+            const bad = [];
+            if (r.schema !== 'access-conformance/1') bad.push('schema');
+            if (typeof r.ok !== 'boolean') bad.push('ok');
+            if (!Array.isArray(r.checks) || !r.checks.length) bad.push('checks');
+            for (const c of r.checks || []) {
+              if (!c.id || !c.status || !c.because) bad.push('check shape: ' + c.id);
+            }
+            if (bad.length) { console.error('malformed report:', bad.join(', ')); process.exit(1); }
+            console.log('report ok —', r.checks.length, 'checks, ok =', r.ok);
+          "
