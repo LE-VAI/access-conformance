@@ -11,7 +11,12 @@
  *
  * That composite is what this file is. It is also the only artifact here that a
  * stranger can CITIFY: a lab can run it, a clinician can be trained on it, a
- * reader can audit the report. See docs/MEASUREMENT-PROTOCOL.md.
+ * reader can audit the report. The measurement method — four metrics with units,
+ * the mandatory three-outcome split, the four conditions including a fatigue
+ * repeat, and what the protocol explicitly cannot do — lives in the sibling
+ * package: `access-input/docs/MEASUREMENT-PROTOCOL.md`. (It was cited here as
+ * `docs/MEASUREMENT-PROTOCOL.md` while this repo had no docs/ directory; the
+ * protocol exists and is authoritative, in access-input.)
  *
  * THE HONEST BOUNDARY. read-along's main entry defines a custom element at
  * module top level and therefore throws in Node — verified, not assumed. So the

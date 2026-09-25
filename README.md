@@ -152,16 +152,20 @@ Not a validated instrument. The metric it computes is **specified, not
 established**. The parameters are engineering values, stated and echoed in every
 report.
 
-**The gap is narrower than "no benchmark exists", and the earlier version of this
-section said so wrongly.** Per-hour and per-minute false-activation figures *are*
-published for adjacent access methods — a hybrid SSVEP+EOG study reports a switch
-false-activation rate of 0.01/min, and a 500-participant wearable-gesture study
-reports 0.6 false positives per hour, which is this metric's exact unit. What does
-not exist is a **validated device-performance instrument for assistive input**:
-QUEST is COSMIN-assessed but measures user *satisfaction*, not device behaviour.
-That distinction is the honest version of this project's claim, and any published
-number from this tool should be read *against* those figures rather than as the
-first of its kind.
+**The gap this addresses, stated precisely.** There is no standardised per-hour or
+per-session false-activation benchmark for assistive switch access — not for single
+switches, not for sip-and-puff, not for EMG switches, not for head pointers, not
+for eye gaze. Per-*trial* measurement is established and reusable (SITbench computes
+FPR = FP/(FP+TN) per trial; Koester's rule of thumb revises scanning at >25% error),
+and per-hour false-positive rates are conventional in adjacent fields such as fall
+detection. What is absent is a rate over *time* for switch access, and the field has
+named the problem without closing it (Eddy et al. list false activation as one of
+five unresolved categories in EMG-based HCI).
+
+Say it that precisely, because the looser version — "no benchmark exists anywhere" —
+is false. The full literature review, including the searches that returned nothing
+(which is the evidence) and the corrections applied to this project's own earlier
+citations, is in `access-input`'s `docs/MEASUREMENT-PROTOCOL.md` §6.
 
 The 15-minute exposure floor before a rate is reported is modelled on recognized
 statistical-unreliability suppression (NCHS suppresses rates under 20 events; SEER
@@ -178,8 +182,11 @@ session* — not that anything conforms. The regulatory shape to avoid is docume
 the FTC's January 2025 action required a vendor to pay $1M for advertising
 automated checks as compliance.
 
-The method is in `docs/MEASUREMENT-PROTOCOL.md` (see the repository; the file was
-cited here before it existed, and writing it is the next task).
+The method is in `access-input`'s `docs/MEASUREMENT-PROTOCOL.md` — 395 lines
+covering the four metrics and their units, the mandatory three-outcome split, the
+four measurement conditions (including a fatigue repeat), the labelling procedure,
+and an explicit "what this protocol cannot do" section. It is a protocol, not a
+study: nobody has run it yet.
 
 ## License
 
