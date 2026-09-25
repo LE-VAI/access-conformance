@@ -49,23 +49,34 @@ export function runChecks(report) {
   // session that genuinely had none, and the run still reported ok. The evidence
   // for the fold now comes from the INPUT to classification (activations that
   // carry an 'undone' witness) rather than from the output it corrupts.
+  //
+  // SEPARATION AND RATE AVAILABILITY ARE DIFFERENT PROPERTIES. Requiring
+  // `ambiguousPerHour !== null` made the check report n/a whenever the exposure
+  // was too short to yield a per-hour figure — but the separation this check is
+  // named for is proven by the COUNTS, which are present and meaningful even when
+  // the rate is withheld. Conflating them turned a passing check into a silent gap
+  // on exactly the short sessions the withheld path exists for.
   const c = measurement.armed.counts;
   const undone = measurement.armed.activations.filter((a) => a.witness === 'undone');
   const foldSuspects = undone.filter((a) => a.outcome === 'false');
   const foldDetected = foldSuspects.length > 0;
+  const rateAvailable = measurement.armed.ambiguousPerHour !== null;
   checks.push({
     id: 'measure.ambiguous-separate',
     name: 'The ambiguous count is reported separately',
     status: foldDetected
       ? 'fail'
-      : (c.ambiguous > 0 && measurement.armed.ambiguousPerHour !== null ? 'pass' : 'n/a'),
+      : (c.ambiguous > 0 ? 'pass' : 'n/a'),
     detail: foldDetected
       ? `${foldSuspects.length} undone activation(s) were classified 'false' — an ` +
         'abandoned attempt has been counted as a device misfire, which makes the ' +
         'rate track the user rather than the hardware'
-      : `${c.ambiguous} ambiguous activation(s), reported as ` +
-        `${measurement.armed.ambiguousPerHour ?? 'n/a'} per armed hour, ` +
-        'never folded into the false count',
+      : `${c.ambiguous} ambiguous activation(s), reported separately from ` +
+        `${c.false} false (counts are meaningful whether or not a rate follows). ` +
+        (rateAvailable
+          ? `Ambiguous rate: ${measurement.armed.ambiguousPerHour} per armed hour.`
+          : 'No per-hour figure: exposure was below the floor, so the RATE is ' +
+            'withheld — the separation still holds.'),
     because: 'collapsing ambiguous into false is the bug the three-outcome split prevents — ' +
              'and it is reachable by one line in the classifier',
   });
