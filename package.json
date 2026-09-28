@@ -1,6 +1,6 @@
 {
   "name": "access-conformance",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "One runnable instrument that drives the whole assistive-input stack in a single session and emits a measurement report — timing, input, and consent, with the conformance checks that make the number trustworthy.",
   "type": "module",
   "main": "src/index.js",
@@ -36,7 +36,10 @@
     "switch-access"
   ],
   "license": "MIT",
-  "author": "Le Vain Bey",
+  "author": {
+    "name": "Designesy",
+    "email": "hello@designesy.org"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/LE-VAI/access-conformance.git"
