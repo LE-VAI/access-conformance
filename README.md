@@ -1,5 +1,15 @@
 # access-conformance
 
+<!-- vai-hero:start -->
+<p align="center">
+  <picture>
+    <source media="(prefers-reduced-motion: reduce)" srcset="docs/media/hero-poster.png">
+    <img src="docs/media/hero-loop.webp" width="800" alt="Three lanes, labelled timing, input and consent, run on one session clock. A playhead sweeps 26.9 seconds of session time. Forty token ticks light up on the timing lane. On the input lane two dwell activations land in yellow and two that were undone land in coral, while a hold made after consent was withdrawn stays dashed and never fires. On the consent lane a teal line is granted, breaks at the withdrawal and resumes when consent is re-granted. Three checks pass, one per lane, and the report types out: false activations withheld because the exposure was too short for a per-hour rate, 4 outcomes (2 true, 2 ambiguous, 0 false), and no check failed out of 11.">
+  </picture>
+</p>
+<p align="center"><sub>A 5.4-second loop. It plays once and rests, and shows a still frame if you prefer reduced motion. <a href="https://le-vai.github.io/LE-VAI/loops/#access-conformance">Watch it on repeat</a>.</sub></p>
+<!-- vai-hero:end -->
+
 **One runnable instrument across an assistive-input stack.** Drives the timing
 layer, the input layer and the consent layer in a single instrumented session,
 then emits a measurement report with conformance checks over it.
